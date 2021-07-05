@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"time"
 
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/hive/hivesim"
@@ -98,6 +99,7 @@ The RPC test suite runs a set of RPC related tests against a running node. It te
 several real-world scenarios such as sending value transactions, deploying a contract or
 interacting with one.`[1:],
 	}
+	// Add testing for general full nodes
 	suite.Add(&hivesim.ClientTestSpec{
 		Name:        "client launch",
 		Description: `This test launches the client and collects its logs.`,
@@ -105,7 +107,65 @@ interacting with one.`[1:],
 		Files:       files,
 		Run:         runAllTests,
 	})
-	hivesim.MustRunSuite(hivesim.New(), suite)
+	// Add testing les light client. This only works with geth for now.
+	var (
+		clients []string
+		sim     = hivesim.New()
+	)
+	clientTypes, err := sim.ClientTypes()
+	if err != nil {
+		panic(err)
+	}
+	for _, name := range clientTypes {
+		if !strings.HasPrefix(name, "go-ethereum") {
+			continue
+		}
+		clients = append(clients, name)
+	}
+	for _, client := range clients {
+		name := client
+		suite.Add(hivesim.TestSpec{
+			Name:        fmt.Sprintf("%s as LES server", name),
+			Description: "This loads the test chain into the les server and verifies whether the light client can sync correctly.",
+			Run:         func(t *hivesim.T) { runLESTests(t, name, clients) },
+		})
+	}
+	hivesim.MustRunSuite(sim, suite)
+}
+
+func runLESTests(t *hivesim.T, serverType string, clientTypes []string) {
+	// Start the LES server
+	serverParams := clientEnv.Set("HIVE_NODETYPE", "full")
+	serverParams = serverParams.Set("HIVE_LIGHTSERVE", "100")
+	client := t.StartClient(serverType, serverParams, files)
+
+	// Configure sink to connect to the source node.
+	clientParams := clientEnv.Set("HIVE_NODETYPE", "light")
+	enode, err := client.EnodeURL()
+	if err != nil {
+		t.Fatal("can't get node peer-to-peer endpoint:", enode)
+	}
+
+	// Sync all sink nodes against the source.
+	for _, sinkType := range clientTypes {
+		name := sinkType
+		t.Run(hivesim.TestSpec{
+			Name:        fmt.Sprintf("%s as LES server", name),
+			Description: "This loads the test chain into the les server and verifies whether the light client can sync correctly.",
+			Run: func(t *hivesim.T) {
+				client := t.StartClient(name, clientParams, files)
+
+				// todo(rjl493456442) Wait the initialization of light client
+				time.Sleep(time.Second * 10)
+
+				err := client.RPC().Call(nil, "admin_addPeer", enode)
+				if err != nil {
+					t.Fatalf("connection failed:", err)
+				}
+				runAllTests(t, client)
+			},
+		})
+	}
 }
 
 // runAllTests runs the tests against a client instance.
