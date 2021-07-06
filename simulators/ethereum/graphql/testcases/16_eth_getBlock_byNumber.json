@@ -26,7 +26,7 @@
         "receiptsRoot" : "0x88b3b304b058b39791c26fdb94a05cc16ce67cf8f84f7348cb3c60c0ff342d0d",
         "transactionCount" : 1,
         "transactionsRoot" : "0x5a8d5d966b48e1331ae19eb459eb28882cdc7654e615d37774b79204e875dc01",
-        "ommers" : [ ],
+        "ommers" : null,
         "ommerAt" : null,
         "miner" : {
           "address" : "0x8888f1f195afa192cfee860698584c030f4c9db1"
