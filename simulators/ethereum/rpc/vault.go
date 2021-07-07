@@ -110,7 +110,7 @@ func (v *vault) createAccountWithSubscription(t *TestEnv, amount *big.Int) commo
 	addressTopic := common.BytesToHash(common.LeftPadBytes(address[:], 32))
 	q := ethereum.FilterQuery{
 		Addresses: []common.Address{predeployedVaultAddr},
-		Topics:    [][]common.Hash{[]common.Hash{eventTopic}, []common.Hash{addressTopic}},
+		Topics:    [][]common.Hash{{eventTopic}, {addressTopic}},
 	}
 	logsSub, err = t.Eth.SubscribeFilterLogs(ctx, q, logs)
 	if err != nil {

@@ -41,8 +41,9 @@
 #  - HIVE_MINER                   enable mining. value is coinbase address.
 #  - HIVE_MINER_EXTRA             extra-data field to set for newly minted blocks
 #  - HIVE_SKIP_POW                if set, skip PoW verification during block import
-#  - HIVE_LOGLEVEL		          client loglevel (0-5)
+#  - HIVE_LOGLEVEL		            client loglevel (0-5)
 #  - HIVE_GRAPHQL_ENABLED         enables graphql on port 8545
+#  - HIVE_LIGHTSERVE              maximum percentage of time allowed for serving LES requests (0 for disabling)
 
 # Immediately abort the script on any error encountered
 set -e
@@ -137,6 +138,11 @@ if [ "$HIVE_MINER_EXTRA" != "" ]; then
 	FLAGS="$FLAGS --miner.extradata $HIVE_MINER_EXTRA"
 fi
 FLAGS="$FLAGS --miner.gasprice 16000000000"
+
+# Configure any les flags
+if [ "$HIVE_LIGHTSERVE" != "" ]; then
+  FLAGS="$FLAGS --light.serve $HIVE_LIGHTSERVE --light.nosyncserve "
+fi
 
 # Configure RPC.
 FLAGS="$FLAGS --http --http.addr=0.0.0.0 --http.port=8545 --http.api=admin,debug,eth,miner,net,personal,txpool,web3"

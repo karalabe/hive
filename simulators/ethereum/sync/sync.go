@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -21,7 +22,6 @@ var (
 		"HIVE_FORK_TANGERINE": "0",
 		"HIVE_FORK_SPURIOUS":  "0",
 		"HIVE_FORK_BYZANTIUM": "0",
-		"HIVE_NODETYPE":       "full",
 	}
 	sourceFiles = map[string]string{
 		"genesis.json": "./simplechain/genesis.json",
@@ -43,17 +43,46 @@ func main() {
 		Description: `This suite of tests verifies that clients can sync from each other in different modes.
 For each client, we test if it can serve as a sync source for all other clients (including itself).`,
 	}
+
+	// SYNC by ETH protocol
+	ethParams := params.Set("HIVE_NODETYPE", "full")
 	suite.Add(hivesim.ClientTestSpec{
 		Name:        "CLIENT as sync source",
 		Description: "This loads the test chain into the client and verifies whether it was imported correctly.",
-		Parameters:  params,
+		Parameters:  ethParams,
 		Files:       sourceFiles,
-		Run:         runSourceTest,
+		Run:         runETHSyncTest,
 	})
-	hivesim.MustRunSuite(hivesim.New(), suite)
+
+	// SYNC by LES protocol
+	//
+	// Add the light client sync test. This only works with geth for now.
+	var (
+		clients []string
+		sim     = hivesim.New()
+	)
+	clientTypes, err := sim.ClientTypes()
+	if err != nil {
+		panic(err)
+	}
+	for _, name := range clientTypes {
+		if !strings.HasPrefix(name, "go-ethereum") {
+			continue
+		}
+		clients = append(clients, name)
+	}
+	for _, client := range clients {
+		name := client
+		suite.Add(hivesim.TestSpec{
+			Name:        fmt.Sprintf("%s as LES server", name),
+			Description: "This loads the test chain into the les server and verifies whether the light client can sync correctly.",
+			Run:         func(t *hivesim.T) { runLESSyncTest(t, name, clients) },
+		})
+	}
+	hivesim.MustRunSuite(sim, suite)
 }
 
-func runSourceTest(t *hivesim.T, c *hivesim.Client) {
+func runETHSyncTest(t *hivesim.T, c *hivesim.Client) {
 	// Check whether the source has imported its chain.rlp correctly.
 	source := &node{c}
 	if err := source.checkHead(testchainHeadNumber, testchainHeadHash); err != nil {
@@ -75,6 +104,47 @@ func runSourceTest(t *hivesim.T, c *hivesim.Client) {
 		Files:       sinkFiles,
 		Run:         runSyncTest,
 	})
+}
+
+func runLESSyncTest(t *hivesim.T, sourceType string, sinkTypes []string) {
+	// Start the LES server
+	serverParams := params.Set("HIVE_NODETYPE", "full")
+	serverParams = serverParams.Set("HIVE_LIGHTSERVE", "100")
+	client := t.StartClient(sourceType, serverParams, sourceFiles)
+
+	// Check whether the source has imported its chain.rlp correctly.
+	source := &node{client}
+	if err := source.checkHead(testchainHeadNumber, testchainHeadHash); err != nil {
+		t.Fatal(err)
+	}
+
+	// Configure sink to connect to the source node.
+	clientParams := params.Set("HIVE_NODETYPE", "light")
+	enode, err := source.EnodeURL()
+	if err != nil {
+		t.Fatal("can't get node peer-to-peer endpoint:", enode)
+	}
+
+	// Sync all sink nodes against the source.
+	for _, sinkType := range sinkTypes {
+		name := sinkType
+		t.Run(hivesim.TestSpec{
+			Name:        fmt.Sprintf("%s as LES server", name),
+			Description: "This loads the test chain into the les server and verifies whether the light client can sync correctly.",
+			Run: func(t *hivesim.T) {
+				client := t.StartClient(name, clientParams, sinkFiles)
+
+				// todo(rjl493456442) Wait the initialization of light client
+				time.Sleep(time.Second * 10)
+
+				err := client.RPC().Call(nil, "admin_addPeer", enode)
+				if err != nil {
+					t.Fatalf("connection failed:", err)
+				}
+				runSyncTest(t, client)
+			},
+		})
+	}
 }
 
 func runSyncTest(t *hivesim.T, c *hivesim.Client) {
