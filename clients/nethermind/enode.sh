@@ -11,6 +11,6 @@
 
 set -e
 
-TARGET_ENODE=$(sed -n -e 's/^.*This node.*: //p' /log.txt)
-echo ${TARGET_ENODE/|/}
+TARGET_ENODE=$(sed -n -e 's/^.*\(enode.*\) $/\1/p' /log.txt | head -n 1)
+echo $TARGET_ENODE
 
